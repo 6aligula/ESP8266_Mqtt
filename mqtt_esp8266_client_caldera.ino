@@ -1,17 +1,14 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-
-//Información de nuestro WIFI
-const char* ssid = "La wifi k lo k";
-const char* password = "la password de la wifi k lo k";
-const char* mqtt_server = "xu.pa.la.com";
-const char* mqtt_user = "loko";
-const char* mqtt_password = "eldiablo";
+#include "secrets.h"
 
 WiFiClient espClient;//Creamos un objeto de la clase cliente wifi
 PubSubClient client(espClient);//
-//definimos el pin 0 como controlador del rele
-int ledPin = 0;
+//definimos los pines
+int motor1 = 5; // D1 motor 1 activa succecion
+int motor2 = 4; // D2 motor 2 activa soplar
+char dispensar[] = "dispensar";
+char soplar[] = "soplar";
 
 //Funcion para conectarnos a la red wifi
 void setup_wifi() {
@@ -43,22 +40,38 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Mensaje recibido [");
   Serial.print(topic);
   Serial.print("] ");
-  //Mediante el bucle for mostramos por pantalla los mensajes contenidos en la variable payload
+  
   for (int i = 0; i < length; i++) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
 
-  // Encender caldera si recibimos un 1 o apagar caldera si recibimos un 0
-  if ((char)payload[0] == '1') {
-    digitalWrite(ledPin, LOW);   // Activamos la caldera con low porque el hardware es de logica negada
-    client.publish("test", "1");//publico un 1 para indicar que se ha encencido la caldera
-  } else {
-    digitalWrite(ledPin, HIGH);  // Apagamos la caldera con High porque el hardware es de logica negada
-    client.publish("test", "0");//publico un 0 para indicar que se ha apagado la caldera
+  if (strcmp(topic, dispensar) == 0) {
+    if ((char)payload[0] == '1') {
+      digitalWrite(motor1, HIGH);
+      //digitalWrite(motor2, LOW);
+      client.publish("recibido", "1");
+    } else {
+      digitalWrite(motor1, LOW);
+      //digitalWrite(motor2, HIGH);
+      client.publish("recibido", "0");
+    }
   }
 
+  // Agregar una comparación para "soplar" si es necesario
+  if (strcmp(topic, soplar) == 0) {
+    if ((char)payload[0] == '1') {
+      //digitalWrite(motor1, LOW);
+      digitalWrite(motor2, HIGH);
+      client.publish("recibido", "1");
+    } else {
+      //digitalWrite(motor1, HIGH);
+      digitalWrite(motor2, LOW);
+      client.publish("recibido", "0");
+    }     
+  }
 }
+
 
 void reconnect() {
   // Loop until we're reconnected
@@ -71,9 +84,10 @@ void reconnect() {
     if (client.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
       Serial.println("connected");
       // Once connected, publicar mensajes
-      client.publish("test", "Bienvenido al control de la caldera to wapo hermano");
+      client.publish("recibido", "Bienvenido al control del dispensador de antibioticos to wapo hermano");
       // ... and resubscribe en el topic casa/caldera(la raspberry enviara las ordenes)
-      client.subscribe("test/return");
+      client.subscribe("dispensar");
+      client.subscribe("soplar");
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -85,12 +99,16 @@ void reconnect() {
 }
 //Primera funcion a ejecutarse en el programa
 void setup() {
-  pinMode(ledPin, OUTPUT);  //Programar pin como salida
-  digitalWrite(ledPin, HIGH);  //Ponemos la salida del pin en alto para que la cladera este en OFF al principio
+  pinMode(motor1, OUTPUT);  //Programar pin como salida
+  pinMode(motor2, OUTPUT);
+  digitalWrite(motor1, LOW);  //Ponemos la salida del pin en alto para que la cladera este en OFF al principio
+  digitalWrite(motor2, LOW);
   Serial.begin(115200);// Configurar velocidad de comunicacion en bites por segundo 
   setup_wifi(); //Llama a la funcion para poner en marcha el cliente wifi
   client.setServer(mqtt_server, 1883);//Configurar el servidor mqtt_server al cual se conectara el cliente por el puerto 1883
   client.setCallback(callback);//Llamar a la funcion callback para procesar las ordenes del broker
+  client.subscribe("dispensar");  // Suscripción al topic
+  client.subscribe("soplar");
 }
 
 void loop() {
